@@ -2,17 +2,11 @@
 
 #include "util.h"
 
-Communication::Communication(TinyGsm* modem,
-                             TinyGsmClient* client,
-                             Settings* config,
-                             MQTT_CALLBACK_SIGNATURE)
+Communication::Communication(TinyGsm* modem, TinyGsmClient* client, Settings* config)
 {
     m_modem = modem;
     m_client = client;
     m_config = config;
-
-    m_mqtt = PubSubClient(*m_client);
-    m_mqtt.setCallback(callback);
 
     pinMode(BOARD_POWERON_PIN, OUTPUT);
     pinMode(MODEM_POWER_PIN, OUTPUT);
@@ -24,13 +18,11 @@ Communication::Communication(TinyGsm* modem,
 
 bool Communication::init(ota::status ota_status)
 {
-    // init modem
     MODEM_SERIAL.begin(MODEM_BAUDRATE, SERIAL_8N1, MODEM_SERIAL_RX_PIN, MODEM_SERIAL_TX_PIN);
     MODEM_SERIAL.flush();
     digitalWrite(BOARD_POWERON_PIN, HIGH);
 
-    if(m_modem->testAT(200))
-    {
+    if (m_modem->testAT(200)) {
         m_modem->restart();
         delay(1000);
     }
@@ -63,20 +55,21 @@ bool Communication::init(ota::status ota_status)
 
     INFO_VALUE("Node ID: ", m_nodeId);
 
-    m_mqtt.setServer(BROKER_HOST, BROKER_PORT);
     m_ota_status = ota_status;
 
     uint8_t sim_status = m_modem->getSimStatus();
     if (sim_status == SIM_LOCKED) {
-        m_error = 2;
-        ERROR("SIM-card locked!");
-        return false;
+        if (strlen(GSM_PIN) == 0 || !m_modem->simUnlock(GSM_PIN)) {
+            m_error = 2;
+            ERROR("SIM-card locked!");
+            return false;
+        }
     } else if (sim_status == SIM_ERROR) {
         m_error = 1;
         ERROR("SIM-card missing!");
         return false;
     }
-    // Prefer automatic network selection on A7670 to avoid hard-coding an incompatible RAT.
+
     m_modem->sendAT("+CNMP=2");
     m_modem->waitResponse(1000L);
 
@@ -98,13 +91,14 @@ bool Communication::modem_is_off()
     return m_modem_state == modem_state::off;
 }
 
-bool Communication::connected_to_mqtt_broker()
+bool Communication::connected_to_server()
 {
-    return m_modem_state == modem_state::mqtt_connected;
+    return m_modem_state == modem_state::server_ready;
 }
 
 void Communication::turn_modem_off()
 {
+    disconnect_server();
     m_modem->poweroff();
     delay(500);
 }
@@ -128,165 +122,73 @@ void Communication::reset_modem()
     delay(500);
     digitalWrite(MODEM_RESET_PIN, LOW);
     delay(500);
+    disconnect_server();
 }
 
-bool Communication::connect_mqtt()
+bool Communication::connect_server()
 {
-    char topic_buf[40] = "";
-
-    get_topic_name(topic_buf, CONNECTED_TOPIC);
-    bool status = m_mqtt.connect(m_nodeId, BROKER_USER, BROKER_PASSWD, topic_buf, 1, true, "0");
-    if (!status) {
-        ERROR("MQTT Connect fail");
-        ERROR(m_mqtt.state());
-        return false;
-    }
-
-    INFO("MQTT Connect Success");
-    m_mqtt.publish(topic_buf, "1", true);
-
-    // subscribe to topics
-    get_topic_name(topic_buf, SETTINGS_SUBSCRIBE_TOPIC);
-    m_mqtt.subscribe(topic_buf);
-
-    get_topic_name(topic_buf, ERROR_SUBSCRIBE_TOPIC);
-    m_mqtt.subscribe(topic_buf);
-
-    get_topic_name(topic_buf, OTA_SUBSCRIBE_TOPIC);
-    m_mqtt.subscribe(topic_buf);
-
-    if (m_first_connection) {
-        get_topic_name(topic_buf, VERSION_TOPIC);
-        m_mqtt.publish(topic_buf, VERSION);
-        if(m_ota_status != ota::status::none)
-        {
-            INFO_VALUE("Ota status: ", m_ota_status);
-            send_ota_status(m_ota_status);
-        }
-
-        m_first_connection = false;
-    }
-
-    m_mqtt.loop();
+    m_server_ready = true;
     return true;
 }
 
-void Communication::disconnect_mqtt()
+void Communication::disconnect_server()
 {
-    char topic_buf[40] = "";
-    get_topic_name(topic_buf, CONNECTED_TOPIC);
-    m_mqtt.publish(topic_buf, "0", true);
-    m_mqtt.disconnect();
-}
-
-void Communication::mqtt_callback(char* topic, byte* payload, unsigned int len)
-{
-    Serial.print("Message arrived [");
-    Serial.print(topic);
-    Serial.print("]: ");
-    Serial.write(payload, len);
-    Serial.println();
-
-    // parse topic and update device shadow
-    char payload_str[128];
-    uint32_t copy_len = len < sizeof(payload_str) - 1 ? len : sizeof(payload_str) - 1;
-    memcpy(payload_str, payload, copy_len);
-    payload_str[copy_len] = '\0';
-
-    char* pt;
-    uint8_t i = 0;
-    pt = strtok(topic, "/");
-    while (pt != NULL) {
-        if (i == 0 && strcmp(pt, PROJECT_NAME) != 0)
-            return;
-        else if (i == 2 && strcmp(pt, "settings") == 0) {
-            String message = String(payload_str);
-
-            // Find the index of the first comma
-            int commaIndex = message.indexOf(',');
-            if (commaIndex == -1) {
-                ERROR("Invalid payload format");
-                return;
-            }
-
-            String modeStr = message.substring(0, commaIndex);
-            String settingStr = message.substring(commaIndex + 1);
-
-            // Convert the substrings to appropriate types
-            uint8_t received_mode = modeStr.toInt();
-            uint32_t received_periocid_tracking_interval = settingStr.toInt();
-
-            m_config->set_mode((system_mode)received_mode);
-            m_config->set_periodic_tracking_interval(received_periocid_tracking_interval);
-            INFO("Changing device mode");
-        } else if (i == 2 && strcmp(pt, "ota") == 0) {
-            String s = String(payload_str);
-            int sep_index = s.indexOf(":");
-            if (sep_index == -1) {
-                ERROR("Invalid OTA payload, missing ':'");
-            } else {
-                s.substring(0, sep_index).toCharArray(m_wifi_details.wifi_ssid, 40);
-                s.substring(sep_index + 1).toCharArray(m_wifi_details.wifi_passwd, 40);
-                m_config->set_mode(system_mode::ota);
-            }
-        }
-        pt = strtok(NULL, "/");
-        i++;
-    }
+    m_server_ready = false;
+    m_client->stop();
 }
 
 bool Communication::send_location(location_update* l)
 {
-    if (connected_to_mqtt_broker()) {
-        char str[80];
-        sprintf(str,
-                "%.6f,%.6f,%.1f,%.1f,%.1f,%d,%d,%d",
-                l->lat,
-                l->lon,
-                l->speed,
-                l->alt,
-                l->accuracy,
-                l->course,
-                l->vsat,
-                l->usat);
-        updateValue(LOC_UPDATE_TOPIC, str);
-        return true;
-    } else {
+    if (!connected_to_server()) {
         return false;
     }
+
+    char timestamp[24] = "";
+    if (l->year > 2000) {
+        snprintf(timestamp,
+                 sizeof(timestamp),
+                 "%04d-%02d-%02dT%02d:%02d:%02dZ",
+                 l->year,
+                 l->month,
+                 l->day,
+                 l->hour,
+                 l->minute,
+                 l->second);
+    }
+
+    char request_path[256];
+    snprintf(request_path,
+             sizeof(request_path),
+             "%s?id=%s&lat=%.6f&lon=%.6f&speed=%.1f&bearing=%u&altitude=%.1f%s%s",
+             TRACCAR_PATH,
+             TRACCAR_DEVICE_ID,
+             l->lat,
+             l->lon,
+             l->speed,
+             l->course,
+             l->alt,
+             timestamp[0] ? "&timestamp=" : "",
+             timestamp);
+
+    return send_http_get(request_path);
 }
 
 bool Communication::send_status(uint8_t soc_in, bool charging)
 {
-    if (connected_to_mqtt_broker()) {
-        int soc = soc_in;
-        if(soc_in == 255)
-        {
-            soc = -1;
-        }
-        char str[80];
-        sprintf(str, "%d,%d,%d", soc, get_signal_strength(), charging);
-        updateValue(STATUS_TOPIC, str);
-        return true;
-    } else {
-        return false;
-    }
+    (void)soc_in;
+    (void)charging;
+    return connected_to_server();
 }
 
 bool Communication::send_ota_status(ota::status status)
 {
-    char str[10];
-    sprintf(str, "%d", status);
-    return updateValue(OTA_STATUS_TOPIC, str);
+    (void)status;
+    return false;
 }
 
 bool Communication::request_settings()
 {
-    if (connected_to_mqtt_broker()) {
-        return updateValue(SETTINGS_REQUEST_TOPIC, "2");
-    } else {
-        return false;
-    }
+    return false;
 }
 
 uint8_t Communication::get_signal_strength()
@@ -300,9 +202,9 @@ void Communication::update()
         || m_modem_state != m_requested_modem_state) {
         INFO("Net check!");
         m_last_modem_state = m_modem_state;
-        // diagnose
-        if (m_mqtt.connected())
-            m_modem_state = modem_state::mqtt_connected;
+
+        if (m_server_ready && m_modem->isGprsConnected())
+            m_modem_state = modem_state::server_ready;
         else if (!m_modem->testAT(200))
             m_modem_state = modem_state::off;
         else if (m_modem->isGprsConnected())
@@ -311,9 +213,8 @@ void Communication::update()
             m_modem_state = modem_state::registered_to_network;
         else if (m_modem->testAT(300))
             m_modem_state = modem_state::not_registered_to_network;
-        
-        if(m_modem_state != m_last_modem_state)
-        {
+
+        if (m_modem_state != m_last_modem_state) {
             m_mode_change_timestamp = millis();
         }
 
@@ -332,8 +233,7 @@ void Communication::update()
                 }
             }
         } else if (m_modem_state == modem_state::not_registered_to_network) {
-            if(util::get_time_diff(m_mode_change_timestamp) > 120*1000) // 2 min
-            {
+            if (util::get_time_diff(m_mode_change_timestamp) > 120 * 1000) {
                 ERROR("Network registeration failed, rebooting modem!");
                 reset_modem();
             }
@@ -342,7 +242,6 @@ void Communication::update()
                 turn_modem_off();
                 m_modem_failed_turn_on_counter = 0;
             }
-
         } else if (m_modem_state == modem_state::registered_to_network) {
             if (m_requested_modem_state > m_modem_state) {
                 INFO("Connecting to GPRS");
@@ -354,43 +253,65 @@ void Communication::update()
             }
         } else if (m_modem_state == modem_state::active_data_connection) {
             if (m_requested_modem_state > m_modem_state) {
-                INFO("Connecting to MQTT Broker");
-                connect_mqtt();
+                INFO("Preparing Traccar transport");
+                connect_server();
             } else if (m_requested_modem_state < m_modem_state) {
-                // Deactivate data connection
                 INFO("Disconnecting GPRS");
+                disconnect_server();
                 m_modem->gprsDisconnect();
-            } else // Where we want to be
-            {
             }
-        } else if (m_modem_state == modem_state::mqtt_connected) {
+        } else if (m_modem_state == modem_state::server_ready) {
             if (m_requested_modem_state < m_modem_state) {
-                INFO("Disconnecting MQTT");
-                disconnect_mqtt();
-            } else if (m_requested_modem_state == m_modem_state) {
-                // Where we want to be
+                INFO("Disconnecting Traccar transport");
+                disconnect_server();
             }
         }
 
         m_status_check_timestamp = millis();
     }
-    m_mqtt.loop();
 }
 
-void Communication::get_topic_name(char* topic_buf, const char* topic_name)
+bool Communication::send_http_get(const char* request_path)
 {
-    strcpy(topic_buf, PROJECT_NAME);
-    strcat(topic_buf, "/");
-    strcat(topic_buf, m_nodeId);
-    strcat(topic_buf, "/");
-    strcat(topic_buf, topic_name);
-}
+    if (!m_client->connect(TRACCAR_HOST, TRACCAR_PORT)) {
+        ERROR("Traccar TCP connect failed");
+        m_server_ready = false;
+        return false;
+    }
 
-bool Communication::updateValue(const char* topic_name, const char* value_buffer)
-{
-    char topic_buffer[50] = "";
-    get_topic_name(topic_buffer, topic_name);
-    return m_mqtt.publish(topic_buffer, value_buffer);
+    m_client->print("GET ");
+    m_client->print(request_path);
+    m_client->print(" HTTP/1.1\r\nHost: ");
+    m_client->print(TRACCAR_HOST);
+    m_client->print("\r\nUser-Agent: T-A7670E-Traccar/");
+    m_client->print(VERSION);
+    m_client->print("\r\nConnection: close\r\n\r\n");
+
+    String status_line;
+    uint32_t start = millis();
+    while (util::get_time_diff(start) < 10000) {
+        while (m_client->available()) {
+            char c = m_client->read();
+            if (c == '\r') {
+                continue;
+            }
+            if (c == '\n') {
+                bool ok = status_line.startsWith("HTTP/1.1 200") || status_line.startsWith("HTTP/1.0 200");
+                m_client->stop();
+                if (!ok) {
+                    ERROR("Traccar HTTP request failed");
+                    ERROR(status_line.c_str());
+                }
+                return ok;
+            }
+            status_line += c;
+        }
+        delay(10);
+    }
+
+    ERROR("Traccar HTTP timeout");
+    m_client->stop();
+    return false;
 }
 
 bool Communication::get_ota_wifi_details(wifi_details* ota_wifi)
@@ -399,7 +320,6 @@ bool Communication::get_ota_wifi_details(wifi_details* ota_wifi)
         strcpy(ota_wifi->wifi_ssid, m_wifi_details.wifi_ssid);
         strcpy(ota_wifi->wifi_passwd, m_wifi_details.wifi_passwd);
         return true;
-    } else {
-        return false;
     }
+    return false;
 }

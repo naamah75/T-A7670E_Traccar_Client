@@ -5,7 +5,7 @@
 #include <WiFi.h>
 #include <time.h>
 
-#include "../config.h"
+#include "app_config.h"
 #include "common.h"
 #include "log.h"
 #include "util.h"

@@ -22,8 +22,6 @@
 TinyGsm modem = TinyGsm(MODEM_SERIAL);
 TinyGsmClient client = TinyGsmClient(modem);
 
-void callback_helper(char* topic, byte* payload, unsigned int len);
-
 // store system state in RTC memory so that it will be remembered through out sleep
 RTC_DATA_ATTR uint16_t bootcount = 0;
 RTC_DATA_ATTR wifi_details ota_wifi_details;
@@ -32,7 +30,7 @@ Settings config = Settings();
 platform device = platform();
 Ui ui = Ui(&device);
 Gnss gnss = Gnss(&modem);
-Communication communications = Communication(&modem, &client, &config, callback_helper);
+Communication communications = Communication(&modem, &client, &config);
 
 uint32_t mode_change_timestamp;
 uint32_t last_location_timestamp;
@@ -49,11 +47,6 @@ uint32_t last_setting_request_timestamp = -setting_request_interval; // request 
 TaskHandle_t uiTaskHandle = NULL;
 
 bool periodic_position_sent = false;
-
-void callback_helper(char* topic, byte* payload, unsigned int len)
-{
-    communications.mqtt_callback(topic, payload, len);
-}
 
 void UiTask(void * parameter) {
     ui.Ui_task();
@@ -171,11 +164,11 @@ void loop()
                     device.sleep(60 * 60); // sec <-- should be about 1h
                     // Woken up here
                     mode_change_timestamp = millis();
-                    communications.set_state(Communication::modem_state::mqtt_connected);
+                    communications.set_state(Communication::modem_state::server_ready);
                     INFO("Woken up from sleep");
                 }
             } else {
-                communications.set_state(Communication::modem_state::mqtt_connected);
+                communications.set_state(Communication::modem_state::server_ready);
             }
             break;
         }
@@ -183,15 +176,15 @@ void loop()
             uint32_t timeout = gnss.has_initial_fix() ? movement_timeout : movement_timeout * 5.0;
             if (util::get_time_diff(last_movement_timestamp) < timeout || gnss.is_moving()
                 || device.charging()) {
-                if (!communications.connected_to_mqtt_broker()) {
-                    communications.set_state(Communication::modem_state::mqtt_connected);
+                if (!communications.connected_to_server()) {
+                    communications.set_state(Communication::modem_state::server_ready);
                 }
                 if (!gnss.is_on() && !communications.modem_is_off()) {
                     gnss.turn_on();
                 }
 
-                else if (!communications.connected_to_mqtt_broker()) {
-                    communications.set_state(Communication::modem_state::mqtt_connected);
+                else if (!communications.connected_to_server()) {
+                    communications.set_state(Communication::modem_state::server_ready);
                 } else {
                     // gnss on and connected
                     if (gnss.has_fix()) {
@@ -220,7 +213,7 @@ void loop()
 
                     // here when woken up by movement
                     last_movement_timestamp = millis();
-                    communications.set_state(Communication::modem_state::mqtt_connected);
+                    communications.set_state(Communication::modem_state::server_ready);
                 }
             }
 
@@ -238,8 +231,8 @@ void loop()
         }
         case system_mode::idle: {
             // stay connected, idle
-            if (!communications.connected_to_mqtt_broker()) {
-                communications.set_state(Communication::modem_state::mqtt_connected);
+            if (!communications.connected_to_server()) {
+                communications.set_state(Communication::modem_state::server_ready);
             }
             break;
         }
@@ -249,11 +242,11 @@ void loop()
                 if (!gnss.is_on() && !communications.modem_is_off()) {
                     gnss.turn_on();
                 }
-                if(!communications.connected_to_mqtt_broker())
+                if(!communications.connected_to_server())
                 {
-                    communications.set_state(Communication::modem_state::mqtt_connected);
+                    communications.set_state(Communication::modem_state::server_ready);
                 }
-                if(gnss.has_fix() && communications.connected_to_mqtt_broker())
+                if(gnss.has_fix() && communications.connected_to_server())
                 {
                     INFO("Sending periodic location");
                     location_update loc;
@@ -306,7 +299,7 @@ void loop()
         ui.set_state(Ui::state::single_blink);
     }
 
-    if (communications.connected_to_mqtt_broker()) {
+    if (communications.connected_to_server()) {
         if (util::get_time_diff(last_status_timestamp) > status_interval || event == platform::event::charger_plugged || event == platform::event::charger_unplugged) {
             communications.send_status(device.get_soc(), device.charging());
             last_status_timestamp = millis();
