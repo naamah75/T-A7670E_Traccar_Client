@@ -1,9 +1,9 @@
 #pragma once
 
-#define TRACCAR_DEVICE_ID "862771076817991"
-#define TRACCAR_URL "http://185.58.121.235:30206/"
+#define TRACCAR_DEVICE_ID "your-device-id"
+#define TRACCAR_URL "http://your-traccar-host:port/"
 
-#define NETWORK_APN "TM"
+#define NETWORK_APN "your-apn"
 #define GSM_PIN ""
 
 // Set to 1 only if your operator requires an IPv6 PDP context.

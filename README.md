@@ -25,10 +25,10 @@ Template attuale:
 ```cpp
 #pragma once
 
-#define TRACCAR_DEVICE_ID "862771076817991"
-#define TRACCAR_URL "http://185.58.121.235:30206/"
+#define TRACCAR_DEVICE_ID "your-device-id"
+#define TRACCAR_URL "http://your-traccar-host:port/"
 
-#define NETWORK_APN "TM"
+#define NETWORK_APN "your-apn"
 #define GSM_PIN ""
 
 #define USE_IPV6_ACCESS_POINT 0
@@ -57,5 +57,5 @@ pio device monitor -b 115200
 ## Note
 
 - la base e' ora l'esempio ufficiale LilyGO, non piu' `sim7000-tracker`
-- il trasporto verso Traccar usa `HTTP` semplice verso il tuo server `http://...`
+- il trasporto verso Traccar usa `HTTP` semplice verso il server configurato in `config.h`
 - il GNSS e' adattato via AT per la libreria `TinyGSM` ufficiale disponibile in PlatformIO
