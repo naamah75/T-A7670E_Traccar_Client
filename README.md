@@ -1,3 +1,9 @@
+<p align="center">
+  <img src="docs/logo.png" alt="T-A7670E Traccar Client" width="220">
+</p>
+
+<p align="center"><strong>Traccar client for LilyGO T-A7670E with PlatformIO</strong></p>
+
 # T-A7670E Traccar Client
 
 Versione `PlatformIO` basata sull'esempio ufficiale LilyGO `examples/Traccar` per `T-A7670E`.
