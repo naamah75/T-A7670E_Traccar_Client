@@ -42,6 +42,16 @@ Template attuale:
 pio run
 ```
 
+Per selezionare una board diversa dall'ambiente di default:
+
+```bash
+pio run -e t-a7670e
+pio run -e t-call-a7670-v1-0
+pio run -e sim7000g
+```
+
+Gli ambienti `PlatformIO` ora coprono i `define` board-specific principali dell'esempio originale LilyGO.
+
 ## Upload
 
 ```bash

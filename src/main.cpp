@@ -36,7 +36,7 @@ const char* post_format =
 
 void light_sleep_delay(uint32_t ms)
 {
-#ifdef DEBUG_SKETCH
+#if DEBUG_SKETCH
     delay(ms);
 #else
     esp_sleep_enable_timer_wakeup(ms * 1000ULL);
@@ -147,7 +147,7 @@ bool post_location(const GPSInfo& info)
         return false;
     }
 
-    modem.https_set_timeout(30, 10, 20);
+    modem.https_set_timeout(static_cast<uint8_t>(30));
     modem.https_set_content_type("application/x-www-form-urlencoded");
     modem.https_set_user_agent("TinyGSM/LilyGo-A76XX");
 
@@ -183,7 +183,7 @@ bool acquire_location(GPSInfo& info)
 
 void modem_enter_sleep(uint32_t ms)
 {
-#ifdef DEBUG_SKETCH
+#if DEBUG_SKETCH
     Serial.printf("DEBUG_SKETCH active, skipping modem sleep for %u seconds\n", ms / 1000);
     delay(ms);
 #else
@@ -381,7 +381,7 @@ void setup()
     modem.setGPSMode(GNSS_MODE_GPS_BDS_GALILEO_SBAS_QZSS);
 #endif
 
-#ifndef TINY_GSM_MODEM_SIM7670G
+#if defined(TINY_GSM_MODEM_A7670) || defined(TINY_GSM_MODEM_A7608) || defined(TINY_GSM_MODEM_SIM7600) || defined(TINY_GSM_MODEM_SIM7670G)
     Serial.print("GPS acceleration is enable");
     if (!modem.enableAGPS()) {
         Serial.println(" failed !!!");
