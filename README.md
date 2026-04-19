@@ -2,31 +2,55 @@
   <img src="docs/logo.png" alt="T-A7670E Traccar Client" width="220">
 </p>
 
-<p align="center"><strong>Traccar client for LilyGO T-A7670E with PlatformIO</strong></p>
+<p align="center"><strong>Traccar client for LilyGO boards with PlatformIO</strong></p>
 
 # T-A7670E Traccar Client
 
-Versione `PlatformIO` basata sull'esempio ufficiale LilyGO `examples/Traccar` per `T-A7670E`.
+`PlatformIO` version based on the official LilyGO `examples/Traccar` example.
 
-## Base del progetto
+This repository started as a `T-A7670E` project, but it also includes `PlatformIO` environments for multiple LilyGO board variants supported by the same upstream example.
 
-- sorgente di riferimento: `Xinyuan-LilyGO/LilyGo-Modem-Series/examples/Traccar`
-- board target: `LilyGO T-A7670E`
-- framework: Arduino su PlatformIO
-- modem target: `A7670E`
+## Project Base
 
-## Struttura
+- reference source: `Xinyuan-LilyGO/LilyGo-Modem-Series/examples/Traccar`
+- primary target board: `LilyGO T-A7670E`
+- framework: Arduino with PlatformIO
+- primary modem target: `A7670E`
 
-- `src/main.cpp`: porting dell'esempio ufficiale Traccar
-- `src/utilities.h`: pinout e macro board per `T-A7670E`
-- `config.h`: configurazione locale non versionata
-- `config.example.h`: template pubblico
+## Supported Boards
 
-## Configurazione locale
+- `LilyGO T-A7670E`
+- `LilyGO T-Call A7670 V1.0`
+- `LilyGO T-Call A7670 V1.1`
+- `LilyGO T-SIM7670G-S3`
+- `LilyGO T-A7608X`
+- `LilyGO T-A7608X-S3`
+- `LilyGO SIM7000G`
+- `LilyGO SIM7070G`
+- `LilyGO SIM7600X`
+- `LilyGO SIM7000G-S3 Standard`
+- `LilyGO SIM7080G-S3 Standard`
+- `LilyGO SIM7670G-S3 Standard`
+- `LilyGO A7670X-S3 Standard`
+- `LilyGO SIM7600X-S3 Standard`
+- `LilyGO T-SIM7080G-S3`
+- `LilyGO T-Relay S3 SimShield`
+- `LilyGO T-PCIE` variants
+- `LilyGO T-ETH Elite` variants
+- `LilyGO T-Internet-COM` variants
 
-`config.h` resta locale e non viene pushato.
+## Structure
 
-Template attuale:
+- `src/main.cpp`: PlatformIO port of the official Traccar example
+- `src/utilities.h`: LilyGO board pin and modem selection macros
+- `config.h`: local untracked configuration
+- `config.example.h`: public configuration template
+
+## Local Configuration
+
+`config.h` stays local and is not pushed.
+
+Current template:
 
 ```cpp
 #pragma once
@@ -48,7 +72,7 @@ Template attuale:
 pio run
 ```
 
-Per selezionare una board diversa dall'ambiente di default:
+To select a board environment other than the default one:
 
 ```bash
 pio run -e t-a7670e
@@ -56,7 +80,7 @@ pio run -e t-call-a7670-v1-0
 pio run -e sim7000g
 ```
 
-Gli ambienti `PlatformIO` ora coprono i `define` board-specific principali dell'esempio originale LilyGO.
+The `PlatformIO` environments cover the main board-specific defines from the original LilyGO example.
 
 ## Upload
 
@@ -64,14 +88,14 @@ Gli ambienti `PlatformIO` ora coprono i `define` board-specific principali dell'
 pio run -t upload
 ```
 
-## Monitor seriale
+## Serial Monitor
 
 ```bash
 pio device monitor -b 115200
 ```
 
-## Note
+## Notes
 
-- la base e' ora l'esempio ufficiale LilyGO, non piu' `sim7000-tracker`
-- il trasporto verso Traccar usa `HTTP` semplice verso il server configurato in `config.h`
-- il GNSS e' adattato via AT per la libreria `TinyGSM` ufficiale disponibile in PlatformIO
+- the current base is the official LilyGO example, not `sim7000-tracker`
+- Traccar transport uses plain `HTTP` against the server configured in `config.h`
+- GNSS handling uses the LilyGO `TinyGSM` fork required by the upstream example
